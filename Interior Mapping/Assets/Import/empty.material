@@ -1,0 +1,10 @@
+//this material is used to keep Ogre from spewing missing-material-errors
+material empty
+{
+	technique
+	{
+		pass
+		{
+		}
+	}
+}

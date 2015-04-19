@@ -1,0 +1,37 @@
+HUD
+{
+    zorder 300
+    container Panel(HUD/Panel)
+    {
+        metrics_mode relative
+        vert_align top
+        left 0
+        top 0
+        width 1
+        height 1
+
+        element TextArea(HUD/Materials)
+		{
+			metrics_mode pixels
+			left 5
+			top 5
+			font_name BlueHighway
+			char_height 17
+			caption undefined
+			colour_top 1 1 0.7
+			colour_bottom 1 1 0.7
+		}
+		
+		element TextArea(HUD/Buttons)
+		{
+			metrics_mode pixels
+			left 600
+			top 5
+			font_name BlueHighway
+			char_height 17
+			caption undefined
+			colour_top 1 1 0.7
+			colour_bottom 1 1 0.7
+		}
+    }
+}
