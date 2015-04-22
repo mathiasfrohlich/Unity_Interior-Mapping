@@ -1,0 +1,1313 @@
+float calculateNoise(float3 position, sampler2D noiseTexture)
+{
+	float3 noises = float3(tex2D(noiseTexture, float2(position.x, position.y) / 32).r,
+									tex2D(noiseTexture, float2(position.z, position.x) / 32).r,
+									tex2D(noiseTexture, float2(position.y, position.z) / 32).r);
+	float result = noises.x + noises.y + noises.z;
+	result /= 3;
+	return result;
+}
+
+float calculateNoiseR(float3 position, sampler1D noiseTexture)
+{
+	float zNoise = tex1D(noiseTexture, position.z).r;
+	float yNoise = tex1D(noiseTexture, position.y + zNoise).r;
+	float xNoise = tex1D(noiseTexture, position.x + yNoise).r;
+	return xNoise;
+}
+
+
+float calculateNoiseG(float3 position, sampler1D noiseTexture)
+{
+	float zNoise = tex1D(noiseTexture, position.z).g;
+	float yNoise = tex1D(noiseTexture, position.y + zNoise).g;
+	float xNoise = tex1D(noiseTexture, position.x + yNoise).g;
+	return xNoise;
+}
+
+
+float4 mixInteriorWithDiffuseCube
+	(
+		float4		lighting,
+		float2		uv,
+		float3		reflection,
+		sampler2D	diffuseTexture,
+		samplerCUBE	cubeTexture,
+		float4		interiorColour
+	)
+{
+	float4 diffuseColour = tex2D(diffuseTexture, uv);
+	float4 cubeColour = texCUBE(cubeTexture, reflection);
+	return lerp(diffuseColour * lighting, cubeColour + interiorColour, diffuseColour.a);
+}
+
+
+float4 mixInteriorWithDiffuseStrongCube
+	(
+		float4		lighting,
+		float2		uv,
+		float3		reflection,
+		sampler2D	diffuseTexture,
+		samplerCUBE	cubeTexture,
+		float4		interiorColour
+	)
+{
+	float4 diffuseColour = tex2D(diffuseTexture, uv);
+	float4 cubeColour = texCUBE(cubeTexture, reflection) * 1.5;
+	float cubeAverage = (cubeColour.r + cubeColour.g + cubeColour.b) / 3;
+	float4 windowColour = lerp(interiorColour * 1.6f, cubeColour, cubeAverage);
+
+	return lerp(diffuseColour * lighting, windowColour, diffuseColour.a);
+}
+
+
+void IM_VP
+	(
+		float4 position	: POSITION,
+		float3 normal	: NORMAL,
+		float2 uv		: TEXCOORD0,
+
+		out float4 oPosition   		: POSITION,
+		out float4 oLighting		: COLOR0,
+		out float2 oUv				: TEXCOORD0,
+		out float3 oCopiedPosition	: TEXCOORD1, //object space
+		out float3 oNormal			: TEXCOORD2, //object space
+		out float3 oReflection		: TEXCOORD3,
+
+		uniform float4x4	worldViewProjMatrix,
+		uniform float4x4	worldMatrix,
+		uniform float3		cameraPosition,		//world space
+		uniform float		uvMultiplier
+	)
+{
+	//put position in from object space to screen space
+	oPosition = mul(worldViewProjMatrix, position);
+
+	oUv = uv * uvMultiplier;
+	oCopiedPosition = position;
+	oNormal = normal;
+	
+	//reflection is calculated in world space to keep it from rotating with the object
+	float4 worldPosition = mul(worldMatrix, position);
+	float3 worldNormal = mul(float3x3(worldMatrix), normal);
+	oReflection = reflect(worldPosition - cameraPosition, worldNormal);
+
+	//calculate lighting with a hardcoded directed light and some ambient
+	float lightStrength = dot(normal, float3(0.5, 0.33166, 0.8));
+	oLighting = saturate(lightStrength) * float4(1, 1, 0.9, 1) + float4(0.3, 0.3, 0.4, 1);
+}
+
+
+void IM_Alternative_VP
+	(
+		float4 position	: POSITION,
+		float3 normal	: NORMAL,
+		float2 uv		: TEXCOORD0,
+
+		out float4 oPosition   		: POSITION,
+		out float4 oLighting		: COLOR0,
+		out float2 oUv				: TEXCOORD0,
+		out float3 oCopiedPosition	: TEXCOORD1, //object space
+		out float3 oNormal			: TEXCOORD2, //object space
+		out float3 oReflection		: TEXCOORD3,
+
+		uniform float4x4	worldViewProjMatrix,
+		uniform float4x4	worldMatrix,
+		uniform float3		cameraPosition		//world space
+	)
+{
+	//put position in from object space to screen space
+	oPosition = mul(worldViewProjMatrix, position);
+
+	oUv = uv;
+	oUv.x = oUv.x * 2;
+	oCopiedPosition = position;
+	oNormal = normal;
+	
+	//reflection is calculated in world space to keep it from rotating with the object
+	float4 worldPosition = mul(worldMatrix, position);
+	float3 worldNormal = mul(float3x3(worldMatrix), normal);
+	oReflection = reflect(worldPosition - cameraPosition, worldNormal);
+
+	//calculate lighting with a hardcoded directed light and some ambient
+	float lightStrength = dot(normal, float3(0.5, 0.33166, 0.8));
+	oLighting = saturate(lightStrength) * float4(1, 1, 0.9, 1) + float4(0.3, 0.3, 0.4, 1);
+}
+
+
+void Simple_VP
+	(
+		float4 position	: POSITION,
+
+		out float4 oPosition   		: POSITION,
+
+		uniform float4x4	worldViewProjMatrix
+	)
+{
+	//put position in from object space to screen space
+	oPosition = mul(worldViewProjMatrix, position);
+}
+
+
+void IM_Ceiling_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+   		uniform sampler2D	ceilingTexture,
+   		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//ceiling height
+	float height = (floor(position.y * wallFrequencies.y) + step(0, direction.y)) / wallFrequencies.y;
+
+	//how much of the ray is needed to get from the cameraPosition to the ceiling
+	float rayFraction = (height - cameraPosition.y) / direction.y;
+
+	//(x,z)-coordinate of intersection with ceiling
+	float2 intersection = 4 * (cameraPosition + rayFraction * direction).xz;
+
+	//use the intersection as the texture coordinates for the ceiling
+	oColour = tex2D(ceilingTexture, intersection);
+}
+
+
+void IM_CeilingFloor_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+   		uniform sampler2D	ceilingTexture,
+   		uniform sampler2D	floorTexture,
+   		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//ceiling height
+	float height = (floor(position.y * wallFrequencies.y) + step(0, direction.y)) / wallFrequencies.y;
+
+	//how much of the ray is needed to get from the cameraPosition to the ceiling
+	float rayFraction = (height - cameraPosition.y) / direction.y;
+
+	//texture-coordinates of intersection with ceiling
+	float2 intersection = 4 * (cameraPosition + rayFraction * direction).xz;
+
+	//use the intersection as the texture coordinates for the ceiling and floor
+	float4 ceilingColour = tex2D(ceilingTexture, intersection);
+	float4 floorColour = tex2D(floorTexture, intersection);
+	
+	//choose between ceiling and floor
+	float4 interiorColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+
+	oColour = interiorColour;
+}
+
+
+void IM_DiffuseCube_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,	//object space
+		float3 reflection	: TEXCOORD3,	//object space
+
+   		out float4 oColour	: COLOR,
+
+		uniform sampler2D	diffuseTexture,
+   		uniform samplerCUBE	cubeTexture
+	)
+{
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, float4(0, 0, 0, 0));
+}
+
+
+void IM_DiffuseCube_Ceiling_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,			//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	diffuseTexture,
+   		uniform sampler2D	ceilingTexture,
+   		uniform samplerCUBE	cubeTexture,
+   		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = normalize(position - cameraPosition);
+
+	//ceiling height
+	float height = (floor(position.y * wallFrequencies.y) + step(0, direction.y)) / wallFrequencies.y;
+
+	//how much of the ray is needed to get from the cameraPosition to the ceiling
+	float rayFraction = (height - cameraPosition.y) / direction.y;
+
+	//texture-coordinates of intersection with ceiling
+	float2 intersection = 4 * (cameraPosition + rayFraction * direction).xz;
+
+	//get the diffuse colour
+	float4 diffuseColour = tex2D(diffuseTexture, uv);
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersection);
+
+	//get the reflections in the window
+	float4 cubeColour = texCUBE(cubeTexture, reflection);
+
+	//horizontality is used to hide the ceiling map when looking almost horizontally
+	//(the ceiling would seem to go to infinity otherwise)
+	float horizontality = 1 - abs(direction.y);
+	horizontality = pow(horizontality, 16);
+	
+	//mix what is seen in the windows
+	float4 windowColour = lerp(ceilingColour, cubeColour * 0.5f, horizontality) + cubeColour * 0.2f;
+
+	//combine the result (alpha is where windows are)
+	oColour = lerp(diffuseColour * lighting, windowColour, diffuseColour.a);
+}
+
+
+void IM_DiffuseCube_CeilingFloor_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	diffuseTexture,
+   		uniform sampler2D	ceilingTexture,
+   		uniform sampler2D	floorTexture,
+   		uniform samplerCUBE	cubeTexture,
+   		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = normalize(position - cameraPosition);
+
+	//ceiling height
+	float height = (floor(position.y * wallFrequencies.y) + step(0, direction.y)) / wallFrequencies.y;
+
+	//how much of the ray is needed to get from the cameraPosition to the ceiling
+	float rayFraction = (height - cameraPosition.y) / direction.y;
+
+	//texture-coordinates of intersection with ceiling
+	float2 intersection = 4 * (cameraPosition + rayFraction * direction).xz;
+
+	//get the diffuse colour
+	float4 diffuseColour = tex2D(diffuseTexture, uv);
+
+	//use the intersection as the texture coordinates for the ceiling and floor
+	float4 ceilingColour = tex2D(ceilingTexture, intersection);
+	float4 floorColour = tex2D(floorTexture, intersection);
+
+	//choose between ceiling and floor
+	float4 interiorColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+
+	//get the reflections in the window
+	float4 cubeColour = texCUBE(cubeTexture, reflection);
+
+	//horizontality is used to hide the ceiling map when looking almost horizontally
+	//(the ceiling would seem to go to infinity otherwise)
+	float horizontality = 1 - abs(direction.y);
+	horizontality = pow(horizontality, 16);
+
+	//mix what is seen in the windows
+	float4 windowColour = lerp(interiorColour, cubeColour, horizontality) + cubeColour * 0.2f;
+
+	//combine the result (alpha is where windows are)
+	oColour = lerp(diffuseColour * lighting, windowColour, diffuseColour.a);
+}
+
+
+float4 calculateUntexturedRoomsColour
+	(
+		float3 position,			//object space
+		float3 wallFrequencies,
+	    float3 cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 walls = (floor(position * wallFrequencies) + step(float3(0, 0, 0), direction)) / wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//choose normals for each of the three possible walls
+	//(this depends on whether we are looking in positive or negative directions)
+	float3 signs = step(direction, float3(0, 0, 0)) * 2 - 1;
+	float3 normalX = float3(1, 0, 0) * signs.x;
+	float3 normalY = float3(0, 1, 0) * signs.y;
+	float3 normalZ = float3(0, 0, 1) * signs.z;
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSy = step(rayFractions.x, rayFractions.y);
+	float rayFraction_xVSy = lerp(rayFractions.y, rayFractions.x, xVSy);
+	float3 interiorNormal = lerp(normalY, normalX, xVSy);
+	interiorNormal = lerp(normalZ, interiorNormal, step(rayFraction_xVSy, rayFractions.z));
+
+	float lightStrength = dot(interiorNormal, float3(0.5, 0.33166, 0.8));
+	float4 interiorLight = saturate(lightStrength) * float4(1, 1, 0.9, 1) + float4(0.3, 0.3, 0.4, 1);
+	
+	return interiorLight;
+}
+
+
+void IM_UntexturedRooms_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateUntexturedRoomsColour(position, wallFrequencies, cameraPosition);
+}
+
+
+void IM_DiffuseCube_UntexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateUntexturedRoomsColour(position, wallFrequencies, cameraPosition);
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateUniformTexturedRoomsColour
+	(
+		float3		position,			//object space
+		sampler2D	uniformTexture,
+		float3		wallFrequencies,
+	    float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 walls = (floor(position * wallFrequencies) + step(float3(0, 0, 0), direction)) / wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+	
+	//texture-coordinates of intersections with walls
+	float2 intersectionX = (cameraPosition + rayFractions.x * direction).zy;
+	float2 intersectionY = (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZ = (cameraPosition + rayFractions.z * direction).xy;
+
+	//choose normals for each of the three possible walls
+	//(this depends on whether we are looking in positive or negative directions)
+	float3 signs = step(direction, float3(0, 0, 0)) * 2 - 1;
+	float3 normalX = float3(1, 0, 0) * signs.x;
+	float3 normalY = float3(0, 1, 0) * signs.y;
+	float3 normalZ = float3(0, 0, 1) * signs.z;
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSy = step(rayFractions.x, rayFractions.y);
+	float rayFraction_xVSy = lerp(rayFractions.y, rayFractions.x, xVSy);
+	float2 intersection = lerp(intersectionY, intersectionX, xVSy);
+	float3 interiorNormal = lerp(normalY, normalX, xVSy);
+	float xyVSz = step(rayFraction_xVSy, rayFractions.z);
+	interiorNormal = lerp(normalZ, interiorNormal, xyVSz);
+	intersection = lerp(intersectionZ, intersection, xyVSz);
+
+	float lightStrength = dot(interiorNormal, float3(0.5, 0.33166, 0.8));
+	float4 interiorLight = saturate(lightStrength) * float4(1, 1, 0.9, 1) + float4(0.3, 0.3, 0.4, 1);
+
+	float4 wallColour = tex2D(uniformTexture, 10 * intersection);
+
+	return interiorLight * wallColour;
+}
+
+
+void IM_UniformTexturedRooms_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	uniformTexture,
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateUniformTexturedRoomsColour(position, uniformTexture, wallFrequencies, cameraPosition);
+}
+
+
+void IM_DiffuseCube_UniformTexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	diffuseTexture,
+		uniform sampler2D	uniformTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateUniformTexturedRoomsColour(position, uniformTexture, wallFrequencies, cameraPosition);
+
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateCeilingTexturedRoomsColour
+	(
+		float3 		position,			//object space
+		sampler2D	ceilingTexture,
+		float3		wallFrequencies,
+	    float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 walls = (floor(position * wallFrequencies) + step(float3(0, 0, 0), direction)) / wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersection with ceiling
+	float2 intersection = 4 * (cameraPosition + rayFractions.y * direction).xz;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersection);
+	float ceilingWeight = step(0, direction.y);
+
+	//choose normals for each of the three possible walls
+	//(this depends on whether we are looking in positive or negative directions)
+	float3 signs = step(direction, float3(0, 0, 0)) * 2 - 1;
+	float3 normalX = float3(1, 0, 0) * signs.x;
+	float3 normalY = float3(0, 1, 0) * signs.y;
+	float3 normalZ = float3(0, 0, 1) * signs.z;
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSy = step(rayFractions.x, rayFractions.y);
+	float rayFraction_xVSy = lerp(rayFractions.y, rayFractions.x, xVSy);
+	float3 interiorNormal = lerp(normalY, normalX, xVSy);
+	ceilingWeight = lerp(ceilingWeight, 0, xVSy);
+	float xyVSz = step(rayFraction_xVSy, rayFractions.z);
+	interiorNormal = lerp(normalZ, interiorNormal, xyVSz);
+	ceilingWeight *= xyVSz;
+
+	float lightStrength = dot(interiorNormal, float3(0.5, 0.33166, 0.8));
+	float4 interiorLight = saturate(lightStrength) * float4(1, 1, 0.9, 1) + float4(0.3, 0.3, 0.4, 1);
+
+	return lerp(interiorLight, ceilingColour, ceilingWeight);
+}
+
+
+void IM_CeilingTexturedRooms_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateCeilingTexturedRoomsColour(position, ceilingTexture, wallFrequencies, cameraPosition);
+}
+
+
+void IM_DiffuseCube_CeilingTexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	diffuseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateCeilingTexturedRoomsColour(position, ceilingTexture, wallFrequencies, cameraPosition);
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateFullyTexturedRoomsColour
+	(
+		float3 		position,			//object space
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler2D	wallXYTexture,
+		sampler2D	wallZYTexture,
+		float3		wallFrequencies,
+		float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 walls = (floor(position * wallFrequencies) + step(float3(0, 0, 0), direction)) / wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = 4 * (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = 4 * (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+	float4 wallXYColour = tex2D(wallXYTexture, intersectionXY);
+	float4 wallZYColour = tex2D(wallZYTexture, intersectionZY);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 interiorColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	interiorColour = lerp(verticalColour, interiorColour, xzVSy);
+	
+	return interiorColour;
+}
+
+
+void IM_FullyTexturedRooms_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateFullyTexturedRoomsColour(position, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, cameraPosition);
+}
+
+
+void IM_DiffuseCube_FullyTexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomsColour(position, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, cameraPosition);
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+void IM_DiffuseStrongCube_FullyTexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = 1.2 * calculateFullyTexturedRoomsColour(position, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, cameraPosition);
+
+	oColour = mixInteriorWithDiffuseStrongCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateFullyTexturedRoomsWithLightVariationColour
+	(
+		float3		position,			//object space
+		sampler2D	noiseTexture,
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler2D	wallXYTexture,
+		sampler2D	wallZYTexture,
+		float3		wallFrequencies,
+		float		lightThreshold,
+	    float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations part 1
+	float3 walls = floor(position * wallFrequencies);
+
+	//calculate variation in the lighting per room
+	float lightVariation = step(calculateNoise(walls, noiseTexture), lightThreshold);
+	lightVariation = lightVariation * 0.7 + 0.3;
+
+	//calculate wall locations part 2
+	walls += step(float3(0, 0, 0), direction);
+	walls /= wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = 4 * (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = 4 * (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+	float4 wallXYColour = tex2D(wallXYTexture, intersectionXY);
+	float4 wallZYColour = tex2D(wallZYTexture, intersectionZY);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 interiorColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	interiorColour = lerp(verticalColour, interiorColour, xzVSy);
+
+	return interiorColour * lightVariation;
+}
+
+
+void IM_FullyTexturedRooms_LightVariation_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	noiseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform float3		wallFrequencies,
+		uniform float		lightThreshold,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateFullyTexturedRoomsWithLightVariationColour(position, noiseTexture, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, lightThreshold, cameraPosition);
+}
+
+
+void IM_DiffuseCube_FullyTexturedRooms_LightVariation_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	noiseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float		lightThreshold,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomsWithLightVariationColour(position, noiseTexture, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, lightThreshold, cameraPosition);
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateFullyTexturedRoomWithAlphaPlaneColour
+	(
+		float3		position,			//object space
+		float3		normal,				//object space
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler2D	wallXYTexture,
+		sampler2D	wallZYTexture,
+		sampler2D	alphaPlaneTexture,
+		float3		wallFrequencies,
+		float		alphaPlaneDistance,
+	    float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 walls = (floor(position * wallFrequencies) + step(float3(0, 0, 0), direction)) / wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = 4 * (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = 4 * (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+	float4 wallXYColour = tex2D(wallXYTexture, intersectionXY);
+	float4 wallZYColour = tex2D(wallZYTexture, intersectionZY);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 wallsColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	wallsColour = lerp(verticalColour, wallsColour, xzVSy);
+	float rayFractionWinner = lerp(rayFractions.y, rayFraction_xVSz, xzVSy);
+	
+
+	//calculate intersection with the alpha plane
+	
+	//The alpha plane uses the standerd plane equation math with variables a,b,c,d to define the plane.
+	//a,b,c of the plane equation of the alpha plane is just the normal of the wall.
+	//d can be calculated from a,b,c and a point on the plane.
+	//This would normally be done like this:
+	//    float3 pointOnAlphaPlane = position - normal * alphaPlaneDistance;
+	//    float d = dot(pointOnAlphaPlane, normal);
+	//But is optimized to this:
+	float d = dot(position, normal) - alphaPlaneDistance;
+
+	//calculate the collision between the ray and the alpha plane
+	float alphaRayFraction = (d - dot(cameraPosition, normal)) / (dot(direction, normal));
+	float3 alphaPlaneIntersectionPoint = alphaRayFraction * direction + cameraPosition;
+
+	float uvXWeight = abs(dot(float2(normal.x, normal.z), float2(1, 0)));
+	float2 alphaPlaneUV = float2(
+		alphaPlaneIntersectionPoint.x + alphaPlaneIntersectionPoint.z,
+		-alphaPlaneIntersectionPoint.y);
+	float4 alphaPlaneColour = tex2D(alphaPlaneTexture, alphaPlaneUV * 4);
+
+	float alphaPlaneWeight = step(alphaRayFraction, rayFractionWinner) * (1 - alphaPlaneColour.a);
+
+
+	float4 interiorColour = lerp(wallsColour, alphaPlaneColour, alphaPlaneWeight);
+	return interiorColour;
+}
+
+
+void IM_FullyTexturedRooms_AlphaPlane_FP
+	(
+		float3 position 	: TEXCOORD1,		//object space
+		float3 normal		: TEXCOORD2,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	alphaPlaneTexture,
+		uniform float3		wallFrequencies,
+		uniform float		alphaPlaneDistance,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomWithAlphaPlaneColour(position, normal,
+		ceilingTexture, floorTexture, wallXYTexture, wallZYTexture, alphaPlaneTexture,
+		wallFrequencies, alphaPlaneDistance, cameraPosition);
+
+	oColour = interiorColour;
+}
+
+
+void IM_DiffuseCube_FullyTexturedRooms_AlphaPlane_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 normal		: TEXCOORD2,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	alphaPlaneTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float		alphaPlaneDistance,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomWithAlphaPlaneColour(position, normal,
+		ceilingTexture, floorTexture, wallXYTexture, wallZYTexture, alphaPlaneTexture,
+		wallFrequencies, alphaPlaneDistance, cameraPosition);
+		
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateFullyTexturedRoomWithAlphaPlaneColourAndLightVariation
+	(
+		float3		position,			//object space
+		float3		normal,				//object space
+		sampler2D	noiseTexture,
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler2D	wallXYTexture,
+		sampler2D	wallZYTexture,
+		sampler2D	alphaPlaneTexture,
+		float3		wallFrequencies,
+		float		alphaPlaneDistance,
+		float		lightThreshold,
+	    float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations part 1
+	float3 walls = floor(position * wallFrequencies);
+
+	//calculate variation in the lighting per room
+	float lightVariation = step(calculateNoise(walls, noiseTexture), lightThreshold);
+	lightVariation = lightVariation * 0.7 + 0.3;
+
+	//calculate wall locations part 2
+	walls += step(float3(0, 0, 0), direction);
+	walls /= wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = 4 * (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = 4 * (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+	float4 wallXYColour = tex2D(wallXYTexture, intersectionXY);
+	float4 wallZYColour = tex2D(wallZYTexture, intersectionZY);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 wallsColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	wallsColour = lerp(verticalColour, wallsColour, xzVSy);
+	float rayFractionWinner = lerp(rayFractions.y, rayFraction_xVSz, xzVSy);
+	
+
+	//calculate intersection with the alpha plane
+	
+	//The alpha plane uses the standerd plane equation math with variables a,b,c,d to define the plane.
+	//a,b,c of the plane equation of the alpha plane is just the normal of the wall.
+	//d can be calculated from a,b,c and a point on the plane.
+	//This would normally be done like this:
+	//    float3 pointOnAlphaPlane = position - normal * alphaPlaneDistance;
+	//    float d = dot(pointOnAlphaPlane, normal);
+	//But is optimized to this:
+	float d = dot(position, normal) - alphaPlaneDistance;
+
+	//calculate the collision between the ray and the alpha plane
+	float alphaRayFraction = (d - dot(cameraPosition, normal)) / (dot(direction, normal));
+	float3 alphaPlaneIntersectionPoint = alphaRayFraction * direction + cameraPosition;
+
+	float uvXWeight = abs(dot(float2(normal.x, normal.z), float2(1, 0)));
+	float2 alphaPlaneUV = float2(
+		alphaPlaneIntersectionPoint.x + alphaPlaneIntersectionPoint.z,
+		-alphaPlaneIntersectionPoint.y);
+	float4 alphaPlaneColour = tex2D(alphaPlaneTexture, alphaPlaneUV * 4);
+
+	float alphaPlaneWeight = step(alphaRayFraction, rayFractionWinner) * (1 - alphaPlaneColour.a);
+
+
+	float4 interiorColour = lerp(wallsColour, alphaPlaneColour, alphaPlaneWeight);
+	return interiorColour * lightVariation;
+}
+
+
+void IM_FullyTexturedRooms_AlphaPlane_LightVariation_FP
+	(
+		float3 position 	: TEXCOORD1,		//object space
+		float3 normal		: TEXCOORD2,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	noiseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	alphaPlaneTexture,
+		uniform float3		wallFrequencies,
+		uniform float		alphaPlaneDistance,
+		uniform float		lightThreshold,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomWithAlphaPlaneColourAndLightVariation(
+		position, normal, noiseTexture, ceilingTexture, floorTexture, wallXYTexture, wallZYTexture,
+		alphaPlaneTexture, wallFrequencies, alphaPlaneDistance, lightThreshold, cameraPosition);
+
+	oColour = interiorColour;
+}
+
+
+void IM_DiffuseCube_FullyTexturedRooms_AlphaPlane_LightVariation_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 normal		: TEXCOORD2,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	noiseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	alphaPlaneTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float		alphaPlaneDistance,
+		uniform float		lightThreshold,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomWithAlphaPlaneColourAndLightVariation(
+		position, normal, noiseTexture, ceilingTexture, floorTexture, wallXYTexture, wallZYTexture,
+		alphaPlaneTexture, wallFrequencies, alphaPlaneDistance, lightThreshold, cameraPosition);
+
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+void IM_DiffuseStrongCube_FullyTexturedRooms_AlphaPlane_LightVariation_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,		//object space
+		float3 normal		: TEXCOORD2,		//object space
+		float3 reflection	: TEXCOORD3,		//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	noiseTexture,
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	alphaPlaneTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float		alphaPlaneDistance,
+		uniform float		lightThreshold,
+	    uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomWithAlphaPlaneColourAndLightVariation(
+		position, normal, noiseTexture, ceilingTexture, floorTexture, wallXYTexture, wallZYTexture,
+		alphaPlaneTexture, wallFrequencies, alphaPlaneDistance, lightThreshold, cameraPosition);
+
+	oColour = mixInteriorWithDiffuseStrongCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateFullyTexturedRoomsDisplacedWallsColour
+	(
+		float3 		position,			//object space
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler2D	wallXYTexture,
+		sampler2D	wallZYTexture,
+		float3		wallFrequencies,
+		float3		displacementStrengths,
+		float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 directionPositiveness = step(float3(0, 0, 0), direction);
+	float3 wallIndices1 = floor(position * wallFrequencies) + directionPositiveness;
+	float3 wallIndices0 = wallIndices1 - float3(1);
+	wallIndices1 += frac(wallIndices1 / 2) * displacementStrengths;
+	wallIndices0 += frac(wallIndices0 / 2) * displacementStrengths;
+	float3 walls1 = wallIndices1 / wallFrequencies;
+	float3 walls0 = wallIndices0 / wallFrequencies;
+
+	//decide which walls should be used
+	float3 wallsPositiveDirection = lerp(walls1, walls0, step(position, walls0));
+	float3 wallsNegativeDirection = lerp(walls1, walls0, step(position, walls1));
+	float3 walls = lerp(wallsNegativeDirection, wallsPositiveDirection, directionPositiveness);
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = 4 * (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = 4 * (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+	float4 wallXYColour = tex2D(wallXYTexture, intersectionXY);
+	float4 wallZYColour = tex2D(wallZYTexture, intersectionZY);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 interiorColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	interiorColour = lerp(verticalColour, interiorColour, xzVSy);
+	
+	return interiorColour;
+}
+
+
+void IM_FullyTexturedRooms_DisplacedWalls_FP
+	(
+		float3 position : TEXCOORD1,				//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		displacementStrengths,
+		uniform float3		cameraPosition			//object space
+	)
+{
+	oColour = calculateFullyTexturedRoomsDisplacedWallsColour(position, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, displacementStrengths, cameraPosition);
+}
+
+
+void IM_DiffuseCube_FullyTexturedRooms_DisplacedWalls_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,			//object space
+		float3 reflection	: TEXCOORD3,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler2D	wallXYTexture,
+		uniform sampler2D	wallZYTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		displacementStrengths,
+		uniform float3		cameraPosition			//object space
+	)
+{
+	float4 interiorColour = calculateFullyTexturedRoomsDisplacedWallsColour(position, ceilingTexture,
+		floorTexture, wallXYTexture, wallZYTexture, wallFrequencies, displacementStrengths, cameraPosition);
+		
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
+
+
+float4 calculateVariationTexturedRoomsColour
+	(
+		float3 		position,			//object space
+		sampler2D	ceilingTexture,
+		sampler2D	floorTexture,
+		sampler1D	noiseTexture,
+		sampler2D	wallTexture,
+		float3		wallFrequencies,
+		float3		cameraPosition		//object space
+	)
+{
+	//get the vector from camera to surface
+	float3 direction = position - cameraPosition;
+
+	//calculate wall locations
+	float3 corner = floor(position * wallFrequencies);
+	float3 walls = corner + step(float3(0, 0, 0), direction);
+	walls /= wallFrequencies;
+	corner /= wallFrequencies;
+
+	//how much of the ray is needed to get from the cameraPosition to each of the walls
+	float3 rayFractions = (float3(walls.x, walls.y, walls.z) - cameraPosition) / direction;
+
+	//texture-coordinates of intersections
+	float2 intersectionXY = (cameraPosition + rayFractions.z * direction).xy;
+	float2 intersectionXZ = 4 * (cameraPosition + rayFractions.y * direction).xz;
+	float2 intersectionZY = (cameraPosition + rayFractions.x * direction).zy;
+
+	//use the intersection as the texture coordinates for the ceiling and floor
+	float4 ceilingColour = tex2D(ceilingTexture, intersectionXZ);
+	float4 floorColour = tex2D(floorTexture, intersectionXZ);
+
+	//decide whether to use the ceiling or the floor
+	float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+
+	//Choose a random texture for this wall in this room.
+	//Textures are stored in a texture atlas of 2x2=4 textures.
+	float noiseXY = calculateNoiseR(corner, noiseTexture);
+	noiseXY = floor(noiseXY * 4) / 4;
+	float2 atlasIndexXY;
+	atlasIndexXY[0] = floor(noiseXY * 2) / 2;
+	atlasIndexXY[1] = (noiseXY - atlasIndexXY[0]) * 2;
+	//put the intersection into room space, so that it comes within [0, 1]
+	intersectionXY = (intersectionXY - corner.xy) * wallFrequencies.xy;
+	//use the texture coordinate to read from the correct texture in the atlas
+	float4 wallXYColour = 0.8 * tex2D(wallTexture, atlasIndexXY + intersectionXY / 2);
+
+	//Choose a random texture for this wall in this room.
+	//Textures are stored in a texture atlas of 2x2=4 textures.
+	float noiseZY = calculateNoiseG(corner, noiseTexture);
+	noiseZY = floor(noiseZY * 4) / 4;
+	float2 atlasIndexZY;
+	atlasIndexZY[0] = floor(noiseZY * 2) / 2;
+	atlasIndexZY[1] = (noiseZY - atlasIndexZY[0]) * 2;
+	//put the intersection into room space, so that it comes within [0, 1]
+	intersectionZY = (intersectionZY - corner.zy) * wallFrequencies.zy;
+	//use the texture coordinate to read from the correct texture in the atlas
+	float4 wallZYColour = tex2D(wallTexture, atlasIndexZY + intersectionZY / 2);
+
+	//choose the closest of these walls for the normal for the lighting
+	//(some intelligent step-usage is needed here to compensate for the lack of an if-statement in ps_2_0)
+	float xVSz = step(rayFractions.x, rayFractions.z);
+	float4 interiorColour = lerp(wallXYColour, wallZYColour, xVSz);
+	float rayFraction_xVSz = lerp(rayFractions.z, rayFractions.x, xVSz);
+	float xzVSy = step(rayFraction_xVSz, rayFractions.y);
+	interiorColour = lerp(verticalColour, interiorColour, xzVSy);
+
+	return interiorColour;
+}
+
+
+void IM_VariationTexturedRooms_FP
+	(
+		float3 position : TEXCOORD1,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler1D	noiseTexture,
+		uniform sampler2D	wallTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		cameraPosition		//object space
+	)
+{
+	oColour = calculateVariationTexturedRoomsColour(position, ceilingTexture,
+		floorTexture, noiseTexture, wallTexture, wallFrequencies, cameraPosition);
+}
+
+
+void IM_DiffuseCube_VariationTexturedRooms_FP
+	(
+		float4 lighting		: COLOR0,
+		float2 uv			: TEXCOORD0,
+		float3 position 	: TEXCOORD1,			//object space
+		float3 reflection	: TEXCOORD3,			//object space
+
+   		out float4 oColour : COLOR,
+
+		uniform sampler2D	ceilingTexture,
+		uniform sampler2D	floorTexture,
+		uniform sampler1D	noiseTexture,
+		uniform sampler2D	wallTexture,
+		uniform sampler2D	diffuseTexture,
+		uniform samplerCUBE	cubeTexture,
+		uniform float3		wallFrequencies,
+		uniform float3		cameraPosition		//object space
+	)
+{
+	float4 interiorColour = calculateVariationTexturedRoomsColour(position, ceilingTexture,
+		floorTexture, noiseTexture, wallTexture, wallFrequencies, cameraPosition);
+
+	oColour = mixInteriorWithDiffuseCube(lighting, uv, reflection, diffuseTexture, cubeTexture, interiorColour);
+}
