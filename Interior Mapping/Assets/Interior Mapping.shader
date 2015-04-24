@@ -53,14 +53,20 @@
 				//ceiling height
 				float3 height = floor(IN.positionCopy) / _wallFrequencies;
 				
+				//how much of the ray is needed to get from the cameraPosition to the ceiling
 				float3 rayFractions = (height - _cameraPosition.y) / direction.y;
-//				float2 intersectionXY = (_cameraPosition + rayFractions.z * direction).xy;
-				float2 intersectionXZ = (_cameraPosition + rayFractions.y * direction).xz;
-//				float2 intersectionZY = (_cameraPosition + rayFractions.x * direction).zy;
 				
+				
+				//texture-coordinates of intersection with ceiling
+				float2 intersectionXZ = (_cameraPosition + rayFractions.y * direction).xz;
+				
+				
+				//use the intersection as the texture coordinates for the ceiling and floor
 				float4 ceilingColour = tex2D(_ceilingTexture, intersectionXZ);
 				float4 floorColour = tex2D(_floorTexture, intersectionXZ);
 				
+				
+				//choose between ceiling and floor
 				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
 
 				
