@@ -4,7 +4,7 @@
 		_wallFrequencies ("Wall freq", Vector) = (1,1,1)
 		
 		_ceilingTexture  ("Ceiling texture", 2D) = "white" {}
-//		_floorTexture ("Floor texture", 2D) = "red" {}
+		_floorTexture ("Floor texture", 2D) = "red" {}
 //
 //		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	 		
 	}
@@ -45,22 +45,26 @@
 			sampler2D _ceilingTexture;
 			sampler2D _floorTexture;
 			
-			half4 frag (INPUT IN) : COLOR
+			float4 frag (INPUT IN) : COLOR
 			{
 				//Vector from camera to intersection point
 				float3 direction = IN.positionCopy - _cameraPosition;
 		
-				float3 corner = ceil(IN.positionCopy) / _wallFrequencies;
+				//ceiling height
+				float3 height = floor(IN.positionCopy) / _wallFrequencies;
 				
-				float3 rayFractions = (corner - _cameraPosition) / direction;
+				float3 rayFractions = (height - _cameraPosition.y) / direction.y;
 //				float2 intersectionXY = (_cameraPosition + rayFractions.z * direction).xy;
 				float2 intersectionXZ = (_cameraPosition + rayFractions.y * direction).xz;
 //				float2 intersectionZY = (_cameraPosition + rayFractions.x * direction).zy;
 				
 				float4 ceilingColour = tex2D(_ceilingTexture, intersectionXZ);
-//				float4 floorColour = tex2D(_floorTexture, intersectionXZ);
+				float4 floorColour = tex2D(_floorTexture, intersectionXZ);
 				
-				return ceilingColour;
+				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+
+				
+				return verticalColour;
 			}
 
 			ENDCG   
