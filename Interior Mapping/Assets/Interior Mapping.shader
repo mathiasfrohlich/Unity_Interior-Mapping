@@ -5,6 +5,9 @@
 		
 		_ceilingTexture  ("Ceiling texture", 2D) = "white" {}
 		_floorTexture ("Floor texture", 2D) = "red" {}
+		
+		_wallTextureXY ("WallXY texture", 2D) = "green"{}
+		_wallTextureZY ("WallZY texture", 2D) = "blue"{}
 //
 //		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	 		
 	}
@@ -34,9 +37,9 @@
 			{
 				INPUT OUT;
 				
-				OUT.pos = mul (UNITY_MATRIX_MVP, v.vertex) ;
+				OUT.pos = mul (UNITY_MATRIX_MVP, v.vertex);
 				OUT.uv = v.texcoord;
-				OUT.positionCopy = float3(v.vertex);
+				OUT.positionCopy = v.vertex;
 
 				return OUT;
 			}
@@ -44,6 +47,8 @@
 			
 			sampler2D _ceilingTexture;
 			sampler2D _floorTexture;
+			sampler2D _wallTextureXY;
+			sampler2D _wallTextureZY;
 			
 			float4 frag (INPUT IN) : COLOR
 			{
@@ -51,26 +56,45 @@
 				float3 direction = IN.positionCopy - _cameraPosition;
 		
 				//ceiling height
-				float3 height = floor(IN.positionCopy) / _wallFrequencies;
+				//float3 height = floor(IN.positionCopy) / _wallFrequencies;
+				float3 height = floor(IN.positionCopy * _wallFrequencies) / _wallFrequencies;
+				//Walls
+				float3 walls = step(float3(0,0,0), direction) / _wallFrequencies;
 				
 				//how much of the ray is needed to get from the cameraPosition to the ceiling
-				float3 rayFractions = (height - _cameraPosition.y) / direction.y;
+				//float3 rayFractions = (height - _cameraPosition.y) / direction.y;
+				float3 rayFractions = ((walls+height) - _cameraPosition) / direction;
 				
+				//finding the wall closest to camera
+				float xORz = step(rayFractions.x, rayFractions.z);
+				float rayFraction_xORz = lerp(rayFractions.z, rayFractions.x, xORz);
+				float xzORy = step(rayFraction_xORz, rayFractions.y);
 				
 				//texture-coordinates of intersection with ceiling
 				float2 intersectionXZ = (_cameraPosition + rayFractions.y * direction).xz;
+				float2 intersectionXY = (_cameraPosition + rayFractions.z * direction).xy;
+				float2 intersectionZY = (_cameraPosition + rayFractions.x * direction).zy;
 				
+				intersectionXY = (intersectionXY - height.xy) * _wallFrequencies.xy;
+				intersectionZY = (intersectionZY - height.zy) * _wallFrequencies.zy;
 				
-				//use the intersection as the texture coordinates for the ceiling and floor
+				//use the intersection as the texture coordinates for the ceiling, floor and walls
 				float4 ceilingColour = tex2D(_ceilingTexture, intersectionXZ);
 				float4 floorColour = tex2D(_floorTexture, intersectionXZ);
+				float4 wallColorsXY = tex2D(_wallTextureXY, intersectionXY);
+				float4 wallColorsZY = tex2D(_wallTextureZY, intersectionZY);
 				
 				
 				//choose between ceiling and floor
 				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
+				//choose between back or side walls
+				float4 interiorColor  = lerp(wallColorsXY, wallColorsZY, xORz);
+				//choose between wall or outcome of ceiling/floor
+				interiorColor = lerp(verticalColour, interiorColor, xzORy);
 
 				
-				return verticalColour;
+				//return verticalColour;
+				return interiorColor;
 			}
 
 			ENDCG   
