@@ -1,5 +1,7 @@
 ﻿Shader "Custom/Interior Mapping" {
 	Properties {
+		_light ("Light", Float) = 1
+	
 		_cameraPosition ("Camera position - don't touch", Vector) = (0,0,0)
 		_wallFrequencies ("Wall freq", Vector) = (1,1,1)
 		
@@ -49,6 +51,7 @@
 				return OUT;
 			}
 
+			float _light;
 			
 			sampler2D _ceilingTexture;
 			sampler2D _floorTexture;
@@ -108,7 +111,7 @@
 				interiorColor_furniture  = lerp( interiorColor, interiorColor_furniture, interiorColor_furniture.a);
 
 				
-				interiorColor = lerp(verticalColour, interiorColor_furniture, xzORy);
+				interiorColor = lerp(verticalColour, interiorColor_furniture, xzORy) * _light;
 				
 				
 				
