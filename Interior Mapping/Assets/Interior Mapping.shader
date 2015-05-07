@@ -1,6 +1,6 @@
 ﻿Shader "Custom/Interior Mapping" {
 	Properties {
-		_cameraPosition ("Camera position", Vector) = (1.939751,0.1998241,-4.33008)
+		_cameraPosition ("Camera position - don't touch", Vector) = (0,0,0)
 		_wallFrequencies ("Wall freq", Vector) = (1,1,1)
 		
 		_ceilingTexture  ("Ceiling texture", 2D) = "white" {}
@@ -9,7 +9,8 @@
 		_wallTextureXY ("WallXY texture", 2D) = "green"{}
 		_wallTextureZY ("WallZY texture", 2D) = "blue"{}
 //
-//		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	 		
+		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	
+ 		
 	}
 	SubShader {
 		 Pass {
@@ -49,6 +50,8 @@
 			sampler2D _floorTexture;
 			sampler2D _wallTextureXY;
 			sampler2D _wallTextureZY;
+			sampler2D _diffuseTexture;
+
 			
 			float4 frag (INPUT IN) : COLOR
 			{
@@ -57,13 +60,13 @@
 		
 				//ceiling height
 				//float3 height = floor(IN.positionCopy) / _wallFrequencies;
-				float3 height = floor(IN.positionCopy * _wallFrequencies) / _wallFrequencies;
+				float3 height = floor(IN.positionCopy * _wallFrequencies ) / _wallFrequencies;
 				//Walls
-				float3 walls = step(float3(0,0,0), direction) / _wallFrequencies;
+				float3 walls = ( step(float3(0,0,0), direction)) / _wallFrequencies;
 				
 				//how much of the ray is needed to get from the cameraPosition to the ceiling
 				//float3 rayFractions = (height - _cameraPosition.y) / direction.y;
-				float3 rayFractions = ((walls+height) - _cameraPosition) / direction;
+				float3 rayFractions = ((walls + height) - _cameraPosition) / direction;
 				
 				//finding the wall closest to camera
 				float xORz = step(rayFractions.x, rayFractions.z);
@@ -81,6 +84,7 @@
 				//use the intersection as the texture coordinates for the ceiling, floor and walls
 				float4 ceilingColour = tex2D(_ceilingTexture, intersectionXZ);
 				float4 floorColour = tex2D(_floorTexture, intersectionXZ);
+				
 				float4 wallColorsXY = tex2D(_wallTextureXY, intersectionXY);
 				float4 wallColorsZY = tex2D(_wallTextureZY, intersectionZY);
 				
@@ -92,9 +96,16 @@
 				//choose between wall or outcome of ceiling/floor
 				interiorColor = lerp(verticalColour, interiorColor, xzORy);
 
+
+
+				//look up the color of the vertex in the diffuse texture 
+				float4 diffuseColour = tex2D(_diffuseTexture, IN.uv);
+				
+				//blend colors from diffuse wall texture and interior
+				return lerp(diffuseColour, interiorColor, diffuseColour.a);
 				
 				//return verticalColour;
-				return interiorColor;
+				//return interiorColor;
 			}
 
 			ENDCG   
