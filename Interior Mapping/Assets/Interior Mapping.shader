@@ -1,6 +1,7 @@
 ﻿Shader "Custom/Interior Mapping" {
 	Properties {
 		_light ("Light", Float) = 1
+		_wave ("Wave", Float) = 0
 	
 		_cameraPosition ("Camera position - don't touch", Vector) = (0,0,0)
 		_wallFrequencies ("Wall freq", Vector) = (1,1,1)
@@ -13,6 +14,7 @@
 		
 		_furniturePlane ("Furniture planeXY", 2D) = "blue"{}
 		_furniturePlane1 ("Furniture planeZY", 2D) = "blue"{}
+		_furniturePlane2 ("Furniture planeZY2", 2D) = "blue"{}
 
 //
 		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	
@@ -52,6 +54,7 @@
 			}
 
 			float _light;
+			float _wave;
 			
 			sampler2D _ceilingTexture;
 			sampler2D _floorTexture;
@@ -61,6 +64,7 @@
 			
 			sampler2D _furniturePlane;
 			sampler2D _furniturePlane1;
+			sampler2D _furniturePlane2;
 
 			
 			float4 frag (INPUT IN) : COLOR
@@ -100,13 +104,14 @@
 				
 				float4 furniturePlaneColorXY = tex2D(_furniturePlane, (intersectionXY));
 				float4 furniturePlaneColorZY = tex2D(_furniturePlane1, (intersectionZY));
+				float4 furniturePlaneColorZY1 = tex2D(_furniturePlane2, (intersectionZY));
 
 				
 				//choose between ceiling and floor
 				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
 				//choose between back or side walls
 				float4 interiorColor  = lerp(wallColorsXY, wallColorsZY, xORz);
-				float4 interiorColor_furniture = lerp(furniturePlaneColorXY, furniturePlaneColorZY, xORz);
+				float4 interiorColor_furniture = lerp(furniturePlaneColorXY, lerp(furniturePlaneColorZY, furniturePlaneColorZY1, _wave), xORz);
 				
 				interiorColor_furniture  = lerp( interiorColor, interiorColor_furniture, interiorColor_furniture.a);
 
