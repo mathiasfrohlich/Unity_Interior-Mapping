@@ -102,6 +102,7 @@
 				float4 wallColorsXY = tex2D(_wallTextureXY, intersectionXY);
 				float4 wallColorsZY = tex2D(_wallTextureZY, intersectionZY);
 				
+				//Animated characters: First is old lady, 2. and 3. is black man "waving"
 				float4 furniturePlaneColorXY = tex2D(_furniturePlane, (intersectionXY));
 				float4 furniturePlaneColorZY = tex2D(_furniturePlane1, (intersectionZY));
 				float4 furniturePlaneColorZY1 = tex2D(_furniturePlane2, (intersectionZY));
@@ -111,11 +112,12 @@
 				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
 				//choose between back or side walls
 				float4 interiorColor  = lerp(wallColorsXY, wallColorsZY, xORz);
+				//Animated character
 				float4 interiorColor_furniture = lerp(furniturePlaneColorXY, lerp(furniturePlaneColorZY, furniturePlaneColorZY1, _wave), xORz);
-				
+				//Furniture back wall
 				interiorColor_furniture  = lerp( interiorColor, interiorColor_furniture, interiorColor_furniture.a);
 
-				
+				//Interior color choosed between ceiling/floor and furniture+wall plan
 				interiorColor = lerp(verticalColour, interiorColor_furniture, xzORy) * _light;
 				
 				
