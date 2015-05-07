@@ -9,7 +9,8 @@
 		_wallTextureXY ("WallXY texture", 2D) = "green"{}
 		_wallTextureZY ("WallZY texture", 2D) = "blue"{}
 		
-		_furniturePlane ("Furniture plane", 2D) = "blue"{}
+		_furniturePlane ("Furniture planeXY", 2D) = "blue"{}
+		_furniturePlane1 ("Furniture planeZY", 2D) = "blue"{}
 
 //
 		_diffuseTexture ("Diffuse texture", 2D) = "green" {}	
@@ -56,6 +57,7 @@
 			sampler2D _diffuseTexture;
 			
 			sampler2D _furniturePlane;
+			sampler2D _furniturePlane1;
 
 			
 			float4 frag (INPUT IN) : COLOR
@@ -93,16 +95,17 @@
 				float4 wallColorsXY = tex2D(_wallTextureXY, intersectionXY);
 				float4 wallColorsZY = tex2D(_wallTextureZY, intersectionZY);
 				
-				float4 furniturePlaneColor = tex2D(_furniturePlane, (intersectionXY));
+				float4 furniturePlaneColorXY = tex2D(_furniturePlane, (intersectionXY));
+				float4 furniturePlaneColorZY = tex2D(_furniturePlane1, (intersectionZY));
 
 				
 				//choose between ceiling and floor
 				float4 verticalColour = lerp(floorColour, ceilingColour, step(0, direction.y));
 				//choose between back or side walls
 				float4 interiorColor  = lerp(wallColorsXY, wallColorsZY, xORz);
+				float4 interiorColor_furniture = lerp(furniturePlaneColorXY, furniturePlaneColorZY, xORz);
 				
-				
-				float4 interiorColor_furniture  = lerp( interiorColor, furniturePlaneColor, furniturePlaneColor.a);
+				interiorColor_furniture  = lerp( interiorColor, interiorColor_furniture, interiorColor_furniture.a);
 
 				
 				interiorColor = lerp(verticalColour, interiorColor_furniture, xzORy);
