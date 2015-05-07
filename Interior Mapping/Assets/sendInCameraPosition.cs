@@ -20,7 +20,7 @@ public class sendInCameraPosition : MonoBehaviour {
 		else
 			val = 0;
 		_mat.SetFloat ("_wave",val);
-		yield return new WaitForSeconds (1.0f);
+		yield return new WaitForSeconds (0.5f);
 		StartCoroutine (StartWave());
 
 	}
