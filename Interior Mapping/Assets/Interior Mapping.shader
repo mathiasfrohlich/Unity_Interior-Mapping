@@ -4,7 +4,7 @@
 		_wave ("Wave", Float) = 0
 	
 		_cameraPosition ("Camera position - don't touch", Vector) = (0,0,0)
-		_wallFrequencies ("Wall freq", Vector) = (1,1,1)
+		_wallFrequencies ("Wall freq", Vector) = (1.9,4,1.9)
 		
 		_ceilingTexture  ("Ceiling texture", 2D) = "white" {}
 		_floorTexture ("Floor texture", 2D) = "red" {}
