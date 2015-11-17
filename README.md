@@ -1,8 +1,8 @@
 Unity Interior-Mapping
 =========
 
-Unity_Interior-Mapping is an basic implamentation of Interior Mapping into the game engine unity.
-Is is inspired by [interiormapping.oogst3d].
+Unity_Interior-Mapping is a basic implamentation of Interior Mapping into the game engine unity.
+It is inspired by [interiormapping.oogst3d].
 
 Usage
 -----
