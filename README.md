@@ -16,7 +16,7 @@ Open the scene named scene and see for yourself.
 License
 ------
 
-The MIT License (MIT)
+[The MIT License (MIT)]
 
 Copyright (c) 2015 Mathias Frøhlich
 
@@ -40,3 +40,4 @@ SOFTWARE.
 
 
 [interiormapping.oogst3d]:http://interiormapping.oogst3d.net/
+[The MIT License (MIT)]:http://opensource.org/licenses/MIT
